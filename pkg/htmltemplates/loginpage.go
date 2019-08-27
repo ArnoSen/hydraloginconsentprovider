@@ -3,7 +3,7 @@ package htmltemplates
 const Login = `
 <!DOCTYPE HTML>
 <html>
-<title>{{.Title}}</title>
+<title>LoginPage</title>
 <body>
 <form method="post">
   <input type="hidden" name="challenge" value="{{.Challenge}}">
@@ -17,6 +17,9 @@ const Login = `
 {{ if .LoginFailed }}
 Username and/or password incorrect
 {{- end }}
+{{ if .LoginError }}
+An error occurred while authenticating the user.
+{{- end }}
 </body>
 </html>
 `
@@ -24,7 +27,7 @@ Username and/or password incorrect
 const Consent = `
 <!DOCTYPE HTML>
 <html>
-<title>{{.Title}}</title>
+<title>ConsentPage</title>
 <body>
 
 Hi {{.User}},<br/><br/>

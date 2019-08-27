@@ -6,7 +6,6 @@ import (
 
 const (
   DefaultPort = 8888
-  DefaultTitle = "Login page"
   DefaultPrefillUser = "test"
   DefaultPrefillPassword = "1234"
   DefaultHydraAdminHost = "localhost"
@@ -16,32 +15,36 @@ const (
 
 type Config struct {
   Port uint16
-  LoginPageHTMLTitle string
   PrefillUser string
   PrefillPassword string 
   HydraAdminHost string
   HydraAdminPort uint16
   HydraAdminBasePath string
-  SkipAuthLoginResponseSSLCheck bool
+  SkipSSLCheck bool
+  AuthFunc func(string,string) (bool, error)
 }
 
 func DefaultConfig() *Config {
 
   return &Config{
     Port: DefaultPort,
-    LoginPageHTMLTitle: DefaultTitle,
     PrefillUser: DefaultPrefillUser,
     PrefillPassword: DefaultPrefillPassword,
     HydraAdminHost: DefaultHydraAdminHost,
     HydraAdminPort: DefaultHydraAdminPort,
     HydraAdminBasePath: DefaultHydraAdminBasePath,
+    AuthFunc: AuthNever,
   }
 }
 
-func (c *Config) SetSkipAuthLoginResponseSSLCheck() {
-  c.SkipAuthLoginResponseSSLCheck = true
+func (c *Config) SetSkipSSLCheck() {
+  c.SkipSSLCheck = true
 }
 
 func (c *Config) GetHydraAdminHostname() string {
   return fmt.Sprintf("%s:%d", c.HydraAdminHost, c.HydraAdminPort)
+}
+
+func AuthNever(username, password string) (bool, error) {
+  return false, nil
 }

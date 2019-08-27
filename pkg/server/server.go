@@ -27,6 +27,7 @@ type LoginPage struct {
   PrefillUser string
   PrefillPassword string
   LoginFailed bool
+  LoginError bool
   Challenge string
 }
 
@@ -65,7 +66,6 @@ func (s *Server) Start() {
       t := template.Must(template.New("login").Parse(htmltemplates.Login))
 
       lp := &LoginPage{
-        Title: s.config.LoginPageHTMLTitle,
         PrefillUser: s.config.PrefillUser,
         PrefillPassword: s.config.PrefillPassword,
         Challenge: r.URL.Query().Get("login_challenge"),
@@ -87,13 +87,43 @@ func (s *Server) Start() {
       username, usernamePresent := r.Form["username"]
       password, passwordPresent := r.Form["password"]
 
-      if !usernamePresent || !passwordPresent || !(username[0] == s.config.PrefillUser && password[0] == s.config.PrefillPassword ) {
+      authSuccess := true
+      var authErr error
+
+      if usernamePresent && passwordPresent {
+        if s.config.AuthFunc != nil {
+          authSuccess, authErr = s.config.AuthFunc(username[0], password[0]) 
+        }
+      }
+
+      if authErr != nil {
+        s.logger.Error("AuthErr credentials")
+
+        t := template.Must(template.New("login").Parse(htmltemplates.Login))
+
+        lp := &LoginPage{
+          PrefillUser: s.config.PrefillUser,
+          PrefillPassword: s.config.PrefillPassword,
+          LoginError: true,
+          Challenge: r.URL.Query().Get("challenge"),
+        }
+
+        err := t.Execute(w, lp)
+
+        if err != nil {
+          s.logger.Errorf("Error rendering network page: %s", err)
+          w.WriteHeader(http.StatusInternalServerError)
+          return
+        }
+        return
+      }
+
+      if !authSuccess {
         s.logger.Error("Incorrect credentials")
 
         t := template.Must(template.New("login").Parse(htmltemplates.Login))
 
         lp := &LoginPage{
-          Title: s.config.LoginPageHTMLTitle,
           PrefillUser: s.config.PrefillUser,
           PrefillPassword: s.config.PrefillPassword,
           LoginFailed: true,
@@ -120,7 +150,7 @@ func (s *Server) Start() {
       s.logger.Debugf("Challenge value: '%s'", challengeValue)
 
       httpclient := &http.Client{}
-      if s.config.SkipAuthLoginResponseSSLCheck {
+      if s.config.SkipSSLCheck {
         httpclient.Transport = &http.Transport{
           TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
         }
@@ -182,7 +212,7 @@ func (s *Server) Start() {
     s.logger.WithFields(logFields).Infof("Request received")
 
     httpclient := &http.Client{}
-    if s.config.SkipAuthLoginResponseSSLCheck {
+    if s.config.SkipSSLCheck {
       httpclient.Transport = &http.Transport{
         TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
       }
