@@ -4,6 +4,7 @@ See: https://github.com/ory/hydra-login-consent-node
 This is the initial version and has lots of raw edges.
 
 Usage:
+```
 
 package main
 
@@ -29,3 +30,4 @@ func main() {
   s := server.New(cfg)
   s.Start()
 }
+```
