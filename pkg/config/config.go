@@ -2,6 +2,8 @@ package config
 
 import (
   "fmt"
+
+  "github.com/ArnoSen/hydraloginconsentprovider/pkg/htmltemplates"
 )
 
 const (
@@ -11,6 +13,8 @@ const (
   DefaultHydraAdminHost = "localhost"
   DefaultHydraAdminPort = 9001
   DefaultHydraAdminBasePath = "/"
+  DefaultLoginPageTemplate = htmltemplates.DefaultLoginTemplate
+  DefaultConsentPageTemplate = htmltemplates.DefaultConsentTemplate
 )
 
 type Config struct {
@@ -22,6 +26,8 @@ type Config struct {
   HydraAdminBasePath string
   SkipSSLCheck bool
   AuthFunc func(string,string) (bool, error)
+  LoginPageTemplate string
+  ConsentPageTemplate string
 }
 
 func DefaultConfig() *Config {
@@ -34,6 +40,8 @@ func DefaultConfig() *Config {
     HydraAdminPort: DefaultHydraAdminPort,
     HydraAdminBasePath: DefaultHydraAdminBasePath,
     AuthFunc: AuthNever,
+    LoginPageTemplate: DefaultLoginPageTemplate,
+    ConsentPageTemplate: DefaultConsentPageTemplate,
   }
 }
 

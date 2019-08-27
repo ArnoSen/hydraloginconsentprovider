@@ -10,7 +10,6 @@ import (
   "strings"
 
   "github.com/sirupsen/logrus"
-  "github.com/ArnoSen/hydraloginconsentprovider/pkg/htmltemplates"
   "github.com/ArnoSen/hydraloginconsentprovider/pkg/config"
   hydraclient "github.com/ory/hydra/sdk/go/hydra/client"
   admin "github.com/ory/hydra/sdk/go/hydra/client/admin"
@@ -63,7 +62,7 @@ func (s *Server) Start() {
     case "GET":
       s.logger.Infof("GET Request received")
 
-      t := template.Must(template.New("login").Parse(htmltemplates.Login))
+      t := template.Must(template.New("login").Parse(s.config.LoginPageTemplate))
 
       lp := &LoginPage{
         PrefillUser: s.config.PrefillUser,
@@ -99,7 +98,7 @@ func (s *Server) Start() {
       if authErr != nil {
         s.logger.Error("AuthErr credentials")
 
-        t := template.Must(template.New("login").Parse(htmltemplates.Login))
+        t := template.Must(template.New("login").Parse(s.config.LoginPageTemplate))
 
         lp := &LoginPage{
           PrefillUser: s.config.PrefillUser,
@@ -121,7 +120,7 @@ func (s *Server) Start() {
       if !authSuccess {
         s.logger.Error("Incorrect credentials")
 
-        t := template.Must(template.New("login").Parse(htmltemplates.Login))
+        t := template.Must(template.New("login").Parse(s.config.LoginPageTemplate))
 
         lp := &LoginPage{
           PrefillUser: s.config.PrefillUser,
@@ -229,7 +228,7 @@ func (s *Server) Start() {
     case "GET":
       s.logger.Infof("GET Request received")
 
-      t := template.Must(template.New("consent").Parse(htmltemplates.Consent))
+      t := template.Must(template.New("consent").Parse(s.config.ConsentPageTemplate))
 
       // get the consent request
       getConsentRequest := admin.NewGetConsentRequestParamsWithHTTPClient(httpclient)

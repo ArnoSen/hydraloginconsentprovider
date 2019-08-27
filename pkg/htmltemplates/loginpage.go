@@ -1,6 +1,6 @@
 package htmltemplates
 
-const Login = `
+const DefaultLoginTemplate = `
 <!DOCTYPE HTML>
 <html>
 <title>LoginPage</title>
@@ -24,7 +24,7 @@ An error occurred while authenticating the user.
 </html>
 `
 
-const Consent = `
+const DefaultConsentTemplate = `
 <!DOCTYPE HTML>
 <html>
 <title>ConsentPage</title>
