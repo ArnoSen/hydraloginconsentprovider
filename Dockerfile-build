@@ -1,0 +1,16 @@
+FROM golang:1.11.3 as builder
+
+COPY . /loginprovider
+WORKDIR /loginprovider/pkg/loginprovider
+ENV GO111MODULE=on
+RUN CGO_ENABLED=0 GOOS=linux go build -o loginprovider
+
+#second stage
+FROM alpine:latest
+
+WORKDIR /root/
+
+COPY --from=builder /content-provder .
+
+ENTRYPOINT "./consent-provider"
+CMD ["show-config"]

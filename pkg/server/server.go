@@ -11,12 +11,15 @@ import (
 
   "github.com/sirupsen/logrus"
   "github.com/ArnoSen/hydraloginconsentprovider/pkg/config"
+  "github.com/ArnoSen/hydraloginconsentprovider/pkg/authenticator/builtin"
+  ad "github.com/ArnoSen/hydraloginconsentprovider/pkg/authenticator/activedirectory"
   hydraclient "github.com/ory/hydra/sdk/go/hydra/client"
   admin "github.com/ory/hydra/sdk/go/hydra/client/admin"
   "github.com/ory/hydra/sdk/go/hydra/models"
 )
 
 type Server struct {
+  authenticator Authenticator
   logger *logrus.Logger
   config *config.Config
 }
@@ -43,10 +46,29 @@ func New(c *config.Config) *Server {
   l := logrus.New()
   l.SetLevel(logrus.DebugLevel)
 
-  return &Server{
+  s := &Server{
     logger: l,
     config: c,
   }
+
+  switch (c.AuthMode) {
+  case config.AUTHMODE_BUILTIN:
+    s.authenticator = builtin.NewBuiltInAuthorizer(
+      c.BuiltinUser, 
+      c.BuiltinPassword)
+
+  case config.AUTHMODE_AD:
+    s.authenticator = ad.NewActiveDirectoryAuthenticator(
+      c.ADDomainControllers,
+      c.ADDomain,
+      c.ADPort,
+      c.ADUserIdentifierProperty,
+    )
+  default:
+    return nil
+  }
+
+  return s
 }
 
 func (s *Server) Start() {
@@ -90,13 +112,11 @@ func (s *Server) Start() {
       var authErr error
 
       if usernamePresent && passwordPresent {
-        if s.config.AuthFunc != nil {
-          authSuccess, authErr = s.config.AuthFunc(username[0], password[0]) 
-        }
+        authSuccess, authErr = s.authenticator.Authenticate(username[0], password[0]) 
       }
 
       if authErr != nil {
-        s.logger.Error("AuthErr credentials")
+        s.logger.Errorf("Unable to authenticate user: %s", authErr)
 
         t := template.Must(template.New("login").Parse(s.config.LoginPageTemplate))
 

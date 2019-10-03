@@ -1,0 +1,5 @@
+FROM alpine:latest
+COPY bin/loginprovider loginprovider/
+WORKDIR loginprovider
+ENTRYPOINT ["./loginprovider"]
+CMD ["start"]
