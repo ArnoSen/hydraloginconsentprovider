@@ -16,6 +16,7 @@ import (
   hydraclient "github.com/ory/hydra/sdk/go/hydra/client"
   admin "github.com/ory/hydra/sdk/go/hydra/client/admin"
   "github.com/ory/hydra/sdk/go/hydra/models"
+
 )
 
 type Server struct {
@@ -30,6 +31,7 @@ type LoginPage struct {
   PrefillPassword string
   LoginFailed bool
   LoginError bool
+  LoginFailedReason string
   Challenge string
 }
 
@@ -87,9 +89,12 @@ func (s *Server) Start() {
       t := template.Must(template.New("login").Parse(s.config.LoginPageTemplate))
 
       lp := &LoginPage{
-        PrefillUser: s.config.PrefillUser,
-        PrefillPassword: s.config.PrefillPassword,
         Challenge: r.URL.Query().Get("login_challenge"),
+      }
+
+      if s.config.PrefillBuiltinCredentials && s.config.AuthMode == config.AUTHMODE_BUILTIN {
+        lp.PrefillUser= s.config.BuiltinUser
+        lp.PrefillPassword= s.config.BuiltinPassword
       }
 
       err := t.Execute(w, lp)
@@ -110,9 +115,10 @@ func (s *Server) Start() {
 
       authSuccess := true
       var authErr error
+      var reason string
 
       if usernamePresent && passwordPresent {
-        authSuccess, authErr = s.authenticator.Authenticate(username[0], password[0]) 
+        authSuccess, reason, authErr = s.authenticator.Authenticate(username[0], password[0]) 
       }
 
       if authErr != nil {
@@ -121,10 +127,13 @@ func (s *Server) Start() {
         t := template.Must(template.New("login").Parse(s.config.LoginPageTemplate))
 
         lp := &LoginPage{
-          PrefillUser: s.config.PrefillUser,
-          PrefillPassword: s.config.PrefillPassword,
           LoginError: true,
-          Challenge: r.URL.Query().Get("challenge"),
+          Challenge: r.URL.Query().Get("login_challenge"),
+        }
+
+        if s.config.PrefillBuiltinCredentials && s.config.AuthMode == config.AUTHMODE_BUILTIN {
+          lp.PrefillUser= s.config.BuiltinUser
+          lp.PrefillPassword= s.config.BuiltinPassword
         }
 
         err := t.Execute(w, lp)
@@ -143,10 +152,14 @@ func (s *Server) Start() {
         t := template.Must(template.New("login").Parse(s.config.LoginPageTemplate))
 
         lp := &LoginPage{
-          PrefillUser: s.config.PrefillUser,
-          PrefillPassword: s.config.PrefillPassword,
           LoginFailed: true,
-          Challenge: r.URL.Query().Get("challenge"),
+          LoginFailedReason: reason,
+          Challenge: r.URL.Query().Get("login_challenge"),
+        }
+
+        if s.config.PrefillBuiltinCredentials && s.config.AuthMode == config.AUTHMODE_BUILTIN {
+          lp.PrefillUser= s.config.BuiltinUser
+          lp.PrefillPassword= s.config.BuiltinPassword
         }
 
         err := t.Execute(w, lp)
@@ -217,6 +230,7 @@ func (s *Server) Start() {
 
       //now send the redirect we just received
       http.Redirect(w, r, loginOKResponse.Payload.RedirectTo, http.StatusFound)
+
 
     default:
       w.WriteHeader(http.StatusMethodNotAllowed)
@@ -346,6 +360,7 @@ func (s *Server) Start() {
         }
         s.logger.Debugf("Succesfully called the accept consent endpoint")
 
+
         //now send the redirect we just received
         http.Redirect(w, r, consentOKResponse.Payload.RedirectTo, http.StatusFound)
         return
@@ -389,5 +404,16 @@ func (s *Server) Start() {
  
   s.logger.Infof("Starting server on port %d", s.config.Port)
 
-  log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", s.config.Port), nil))
+  cfg := &tls.Config{
+    MinVersion: tls.VersionTLS12,
+    PreferServerCipherSuites: true,
+  }
+
+  srv := &http.Server{
+    Addr: fmt.Sprintf(":%d", s.config.Port),
+    TLSConfig: cfg,
+    TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
+  }
+
+  log.Fatal(srv.ListenAndServeTLS(s.config.CertLocation, s.config.PrivateKeyLocation))
 }

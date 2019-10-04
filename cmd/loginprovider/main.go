@@ -17,19 +17,11 @@ const (
   VERSIONTEMPLATE=`{{printf "Version: %s\n" .Version}}`
 
   // command defaults
-  SYSTEMCONFIGDIRECTORY="/etc/consentprovider"
+  SYSTEMCONFIGDIRECTORY="/etc/loginprovider"
   LOCALCONFIGDIRECTORY="./etc"
-  DEFAULTCONFIGFILENAMEPREFIX="consentprovider"
-  ENVPREFIX="CP"
-
-  //application defaults
-  PREFILL_USER="default"
-  PREFILL_PASSWORD="1234"
+  DEFAULTCONFIGFILENAMEPREFIX="loginprovider"
+  ENVPREFIX="LP"
 )
-
-func authFunc(username, password string) (bool, error) {
-  return username==PREFILL_USER && password==PREFILL_PASSWORD, nil
-}
 
 var myviper *viper.Viper
 
@@ -82,16 +74,19 @@ func parseConfig(v *viper.Viper) (*config.Config, error)  {
   if i := v.GetInt("Port"); i != 0 { 
     c.Port = uint16(i)
   }
-  if i := v.GetString("PrefillUser"); i != "" {
-    c.PrefillUser = i
-  }
-  if i := v.GetString("PrefillPassword"); i != "" {
-    c.PrefillPassword = i
+  if i := v.GetBool("PrefillBuiltinCredentials"); i {
+    c.PrefillBuiltinCredentials = i
   }
   if i := v.GetString("HydraAdminHost"); i != "" {
     c.HydraAdminHost = i
   }
-  if i := v.GetInt("GetHydraAdminPort"); i != 0 {
+  if i := v.GetString("PrivateKeyLocation"); i != "" {
+    c.PrivateKeyLocation = i
+  }
+  if i := v.GetString("CertLocation"); i != "" {
+    c.CertLocation = i
+  }
+  if i := v.GetInt("HydraAdminPort"); i != 0 {
     c.HydraAdminPort = uint16(i)
   }
   if v.GetBool("SkipSSLCheck") {
@@ -101,18 +96,15 @@ func parseConfig(v *viper.Viper) (*config.Config, error)  {
     c.AuthMode = i
   }
   if i := v.GetStringSlice("ADDomainControllers"); len(i) > 0 {
-    c.AuthMode = config.AUTHMODE_AD
     c.ADDomainControllers = i
   }
   if i := v.GetString("ADDomain"); i != "" {
-    c.AuthMode = config.AUTHMODE_AD
     c.ADDomain = i
   }
   if i := v.GetInt("ADDomainPort"); i != 0 {
     c.ADPort = uint16(i)
   }
   if i := v.GetString("ADUserIdentifierProperty"); i != "" {
-    c.AuthMode = config.AUTHMODE_AD
     c.ADUserIdentifierProperty = i
   }
 

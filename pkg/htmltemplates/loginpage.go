@@ -15,7 +15,7 @@ const DefaultLoginTemplate = `
 </form>
 <br/><br/>
 {{ if .LoginFailed }}
-Username and/or password incorrect
+Authentication failed: {{.LoginFailedReason}}
 {{- end }}
 {{ if .LoginError }}
 An error occurred while authenticating the user.

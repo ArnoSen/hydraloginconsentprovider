@@ -1,5 +1,6 @@
 FROM alpine:latest
 COPY bin/loginprovider loginprovider/
 WORKDIR loginprovider
+USER 2000
 ENTRYPOINT ["./loginprovider"]
 CMD ["start"]

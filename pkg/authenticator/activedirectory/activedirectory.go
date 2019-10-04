@@ -3,6 +3,7 @@ package activedirectory
 import (
   "strings"
   "fmt"
+  "crypto/tls"
 
   "gopkg.in/ldap.v2"
 )
@@ -23,23 +24,42 @@ func NewActiveDirectoryAuthenticator(dcs []string, domain string, port uint16, u
   }
 }
 
-func (a *ActiveDirectory) Authenticate(username, password string) (bool, error) {
+func (a *ActiveDirectory) Authenticate(username, password string) (bool, string, error) {
 
   if len(a.DomainControllers) == 0 {
-    return false, fmt.Errorf("No domain controllers configured")
+    return false, "", fmt.Errorf("No domain controllers configured")
   } 
 
-  l, err := ldap.Dial("tcp", fmt.Sprintf("%s:%d", a.DomainControllers[0], a.Port))
+  l, err := ldap.DialTLS("tcp", fmt.Sprintf("%s:%d", a.DomainControllers[0], a.Port), &tls.Config{ ServerName: a.DomainControllers[0], InsecureSkipVerify: true } )
+
   if err != nil {
-    return false, err
+    return false, "", err
   }
   defer l.Close()
 
-  err = l.Bind(fmt.Sprintf("%s=%s,%s", a.UserIdentifierProperty, domainToDC(a.Domain)), password)
+  ldapUsername := fmt.Sprintf("%s@%s", username, a.Domain)
+
+  err = l.Bind(ldapUsername, password)
   if err != nil {
-    return false, err
+    var errorText string
+
+    if IsErrorType(err, WRONGCREDENTIALSERROR) {
+      errorText = "Invalid username/password" 
+    }
+    if IsErrorType(err, PASSWORDEXPIRED) {
+      errorText = "Password has expired" 
+    }
+    if IsErrorType(err, PASSWORDMUSTBERESET) {
+      errorText = "Password must be set at next logon" 
+    }
+    if errorText != "" {
+      return false, errorText, nil
+    }
+
+    return false, "", err
+
   }
-  return true, nil
+  return true, "", nil
 }
 
 //Converts a domain e.g. mydomain.com to 'DC=mydomain,DC=com'

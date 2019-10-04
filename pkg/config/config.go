@@ -8,8 +8,7 @@ import (
 
 const (
   DefaultPort = 8888
-  DefaultPrefillUser = "test"
-  DefaultPrefillPassword = "1234"
+  DefaultPrefillBuiltinCredentials = true
   DefaultBuiltinUser = "test"
   DefaultBuiltinPassword = "test"
   DefaultHydraAdminHost = "localhost"
@@ -17,23 +16,25 @@ const (
   DefaultHydraAdminBasePath = "/"
   DefaultLoginPageTemplate = htmltemplates.DefaultLoginTemplate
   DefaultConsentPageTemplate = htmltemplates.DefaultConsentTemplate
-  DefaultADPort = 6686
+  DefaultADPort = 636
+  DefaultPrivateKeyLocation = "etc/loginprovider.key"
+  DefaultCertLocation = "etc/loginprovider.crt"
 
   AUTHMODE_BUILTIN = "builtin"
   AUTHMODE_AD = "ad"
 )
 
 type Config struct {
+  PrivateKeyLocation string
+  CertLocation string
   Port uint16
-  PrefillUser string
-  PrefillPassword string 
+  PrefillBuiltinCredentials bool
   BuiltinUser string
   BuiltinPassword string
   HydraAdminHost string
   HydraAdminPort uint16
   HydraAdminBasePath string
   SkipSSLCheck bool
-  AuthFunc func(string,string) (bool, error)
   LoginPageTemplate string
   ConsentPageTemplate string
   AuthMode string
@@ -46,20 +47,28 @@ type Config struct {
 func DefaultConfig() *Config {
 
   return &Config{
+    PrivateKeyLocation: DefaultPrivateKeyLocation,
+    CertLocation: DefaultCertLocation,
     Port: DefaultPort,
     AuthMode: AUTHMODE_BUILTIN,
-    PrefillUser: DefaultPrefillUser,
-    PrefillPassword: DefaultPrefillPassword,
+    PrefillBuiltinCredentials: DefaultPrefillBuiltinCredentials,
     BuiltinUser: DefaultBuiltinUser,
     BuiltinPassword: DefaultBuiltinPassword,
     HydraAdminHost: DefaultHydraAdminHost,
     HydraAdminPort: DefaultHydraAdminPort,
     HydraAdminBasePath: DefaultHydraAdminBasePath,
-    AuthFunc: AuthNever,
     LoginPageTemplate: DefaultLoginPageTemplate,
     ConsentPageTemplate: DefaultConsentPageTemplate,
     ADPort: DefaultADPort,
   }
+}
+
+func (c *Config) SetPrivateKeyLocation(l string) {
+  c.PrivateKeyLocation = l
+}
+
+func (c *Config) SetCertLocation(l string) {
+  c.CertLocation = l
 }
 
 func (c *Config) SetSkipSSLCheck() {
@@ -70,26 +79,24 @@ func (c *Config) GetHydraAdminHostname() string {
   return fmt.Sprintf("%s:%d", c.HydraAdminHost, c.HydraAdminPort)
 }
 
-func AuthNever(username, password string) (bool, error) {
-  return false, nil
-}
-
 func (c *Config) Dump() {
 
+  fmt.Printf("PrivateKeyLocation: %s\n", c.PrivateKeyLocation)
+  fmt.Printf("CertificateLocation: %s\n", c.CertLocation)
   fmt.Printf("Port: %d\n", c.Port)
-  fmt.Printf("PrefillUser: %s\n", c.PrefillUser)
-  fmt.Printf("PrefillPassword: %s\n", c.PrefillPassword)
   fmt.Printf("AuthMode: %s\n", c.AuthMode)
   if c.AuthMode == AUTHMODE_AD {
     fmt.Printf("ADDomainControllers: %s\n", c.ADDomainControllers)
     fmt.Printf("ADDomain: %s\n", c.ADDomain)
     fmt.Printf("ADPort: %d\n", c.ADPort)
     fmt.Printf("ADUserIdentifierProperty: %s\n", c.ADUserIdentifierProperty)
+  } else {
+    fmt.Printf("PrefillBuiltinCredentials: %t\n", c.PrefillBuiltinCredentials)
   }
   fmt.Printf("HydraAdminHost: %s\n", c.HydraAdminHost)
   fmt.Printf("HydraAdminPort: %d\n", c.HydraAdminPort)
   fmt.Printf("HydraAdminBasePath: %s\n", c.HydraAdminBasePath)
-
+  fmt.Printf("SkipSSLCheck: %t\n", c.SkipSSLCheck)
 }
 
 func ValidateAuthMode(mode string) bool {

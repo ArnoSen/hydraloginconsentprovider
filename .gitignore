@@ -1,4 +1,5 @@
 .*.swp
 cmd/loginprovider/loginprovider
-cmd/loginprovider/etc
+cmd/loginprovider/etc/loginprovider.yml
+cmd/loginprovider/etc/loginprovider.yaml
 vendor/

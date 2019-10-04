@@ -1,0 +1,386 @@
+package server
+
+import (
+  "net/http"
+  "fmt"
+  "log"
+  "text/template"
+  "crypto/tls"
+  "time"
+  "strings"
+  "context"
+
+  "github.com/sirupsen/logrus"
+  "github.com/ArnoSen/hydraloginconsentprovider/pkg/config"
+  "github.com/ArnoSen/hydraloginconsentprovider/pkg/authenticator/builtin"
+  ad "github.com/ArnoSen/hydraloginconsentprovider/pkg/authenticator/activedirectory"
+  client "github.com/ArnoSen/hydraloginconsentprovider/pkg/loginconsentclient"
+  hydraclient "github.com/ory/hydra/sdk/go/hydra/client"
+  admin "github.com/ory/hydra/sdk/go/hydra/client/admin"
+  "github.com/ory/hydra/sdk/go/hydra/models"
+)
+
+type Server struct {
+  authenticator Authenticator
+  logger *logrus.Logger
+  config *config.Config
+}
+
+type LoginPage struct {
+  Title string
+  PrefillUser string
+  PrefillPassword string
+  LoginFailed bool
+  LoginError bool
+  Challenge string
+}
+
+type ConsentPage struct {
+  Title string
+  User string
+  Challenge string
+  ClientName string
+  ClientId string
+  Scope []string
+}
+
+func New(c *config.Config) *Server {
+  l := logrus.New()
+  l.SetLevel(logrus.DebugLevel)
+
+  s := &Server{
+    logger: l,
+    config: c,
+  }
+
+  switch (c.AuthMode) {
+  case config.AUTHMODE_BUILTIN:
+    s.authenticator = builtin.NewBuiltInAuthorizer(
+      c.BuiltinUser, 
+      c.BuiltinPassword)
+
+  case config.AUTHMODE_AD:
+    s.authenticator = ad.NewActiveDirectoryAuthenticator(
+      c.ADDomainControllers,
+      c.ADDomain,
+      c.ADPort,
+      c.ADUserIdentifierProperty,
+    )
+  default:
+    return nil
+  }
+
+  return s
+}
+
+func (s *Server) Start() {
+
+  http.HandleFunc("/login", func (w http.ResponseWriter, r *http.Request) {
+
+    logFields := make(map[string]interface{})
+    logFields["path"] = r.URL.String()
+
+    s.logger.WithFields(logFields).Infof("Request received")
+
+    switch(r.Method) { 
+    case "GET":
+      s.logger.Infof("GET Request received")
+
+      t := template.Must(template.New("login").Parse(s.config.LoginPageTemplate))
+
+      lp := &LoginPage{
+        Challenge: r.URL.Query().Get("login_challenge"),
+      }
+
+      if s.config.PrefillBuiltinCredentials && s.config.AuthMode == config.AUTHMODE_BUILTIN {
+        lp.PrefillUser= s.config.BuiltinUser
+        lp.PrefillPassword= s.config.BuiltinPassword
+      }
+
+      err := t.Execute(w, lp)
+
+      if err != nil {
+        s.logger.Errorf("Error rendering network page: %s", err)
+        w.WriteHeader(http.StatusInternalServerError)
+        return
+      }
+
+    case "POST":
+      s.logger.Infof("POST Request received")
+
+      r.ParseForm()
+
+      username, usernamePresent := r.Form["username"]
+      password, passwordPresent := r.Form["password"]
+
+      authSuccess := true
+      var authErr error
+
+      if usernamePresent && passwordPresent {
+        authSuccess, authErr = s.authenticator.Authenticate(username[0], password[0]) 
+      }
+
+      if authErr != nil {
+        s.logger.Errorf("Unable to authenticate user: %s", authErr)
+
+        t := template.Must(template.New("login").Parse(s.config.LoginPageTemplate))
+
+        lp := &LoginPage{
+          LoginError: true,
+          Challenge: r.URL.Query().Get("login_challenge"),
+        }
+
+        if s.config.PrefillBuiltinCredentials && s.config.AuthMode == config.AUTHMODE_BUILTIN {
+          lp.PrefillUser= s.config.BuiltinUser
+          lp.PrefillPassword= s.config.BuiltinPassword
+        }
+
+        err := t.Execute(w, lp)
+
+        if err != nil {
+          s.logger.Errorf("Error rendering network page: %s", err)
+          w.WriteHeader(http.StatusInternalServerError)
+          return
+        }
+        return
+      }
+
+      if !authSuccess {
+        s.logger.Error("Incorrect credentials")
+
+        t := template.Must(template.New("login").Parse(s.config.LoginPageTemplate))
+
+        lp := &LoginPage{
+          LoginFailed: true,
+          Challenge: r.URL.Query().Get("login_challenge"),
+        }
+
+        if s.config.PrefillBuiltinCredentials && s.config.AuthMode == config.AUTHMODE_BUILTIN {
+          lp.PrefillUser= s.config.BuiltinUser
+          lp.PrefillPassword= s.config.BuiltinPassword
+        }
+
+        err := t.Execute(w, lp)
+
+        if err != nil {
+          s.logger.Errorf("Error rendering network page: %s", err)
+          w.WriteHeader(http.StatusInternalServerError)
+          return
+        }
+        return
+      }
+
+      s.logger.Infof("User '%s' has been authenticated", username[0])
+
+      var challengeValue string
+      challengeFromForm, challengeInForm := r.Form["challenge"]
+      if challengeInForm {
+        challengeValue = challengeFromForm[0]
+      }
+      s.logger.Debugf("Challenge value: '%s'", challengeValue)
+
+
+      c := client.NewClient(s.config.HydraAdminHost, "", s.config.HydraAdminPort) 
+      c.SkipSSLCheck()
+      _, err := c.GetLoginRequest(context.TODO(), challengeValue)
+
+      if err != nil {
+        s.logger.Errorf("Error getting login request details: %s", err)
+        fmt.Fprintf(w, err.Error())
+        w.WriteHeader(http.StatusInternalServerError)
+        return
+      }
+      //s.logger.Debugf("Response object getting login request: %s", libtesting.SpewShort(resp))
+
+      b := &client.HandledLoginRequest{
+        Subject: username[0], 
+      }
+
+      s.logger.Debugf("Sending accept login okay for challenge '%s'", challengeValue)
+      loginOKResponse, err := c.AcceptLoginRequest(context.TODO(), b, challengeValue)
+      if err != nil {
+        s.logger.Errorf("Error getting login ok: %s", err)
+        fmt.Fprintf(w, err.Error())
+        w.WriteHeader(http.StatusInternalServerError)
+        return
+      }
+
+      s.logger.Debugf("Now redirecting to '%s'", loginOKResponse.RedirectTo)
+
+      //now send the redirect we just received
+      http.Redirect(w, r, loginOKResponse.RedirectTo, http.StatusFound)
+
+    default:
+      w.WriteHeader(http.StatusMethodNotAllowed)
+    }
+  })
+
+  http.HandleFunc("/consent", func (w http.ResponseWriter, r *http.Request) {
+
+    logFields := make(map[string]interface{})
+    logFields["path"] = r.URL.String()
+
+    s.logger.WithFields(logFields).Infof("Request received")
+
+    httpclient := &http.Client{}
+    if s.config.SkipSSLCheck {
+      httpclient.Transport = &http.Transport{
+        TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+      }
+    }
+
+    trans := &hydraclient.TransportConfig{
+      Host: s.config.GetHydraAdminHostname(),
+      BasePath: s.config.HydraAdminBasePath,
+      Schemes: []string{"https"},
+    }
+    hydra := hydraclient.NewHTTPClientWithConfig(nil, trans)
+
+    switch(r.Method) { 
+    case "GET":
+      s.logger.Infof("GET Request received")
+
+      t := template.Must(template.New("consent").Parse(s.config.ConsentPageTemplate))
+
+      // get the consent request
+      getConsentRequest := admin.NewGetConsentRequestParamsWithHTTPClient(httpclient)
+      getConsentRequest.SetTimeout(10 * time.Second) 
+      getConsentRequest.ConsentChallenge = r.URL.Query().Get("consent_challenge")
+
+      getConsentRequestResponse, err := hydra.Admin.GetConsentRequest(getConsentRequest)
+      if err != nil {
+        s.logger.Errorf("Error getting login ok: %s", err)
+        fmt.Fprintf(w, err.Error())
+        w.WriteHeader(http.StatusInternalServerError)
+        return
+      }
+
+      lp := &ConsentPage{
+        Title: "ConsentPage",
+        User: getConsentRequestResponse.Payload.Subject,
+        ClientName: getConsentRequestResponse.Payload.Client.Name,
+        ClientId: getConsentRequestResponse.Payload.Client.ClientID,
+        Challenge: r.URL.Query().Get("challenge"),
+        Scope: getConsentRequestResponse.Payload.RequestedScope,
+      }
+
+      err = t.Execute(w, lp)
+
+      if err != nil {
+        s.logger.Errorf("Error rendering network page: %s", err)
+        w.WriteHeader(http.StatusInternalServerError)
+        return
+      }
+
+    case "POST":
+      s.logger.Infof("POST Request received")
+
+      r.ParseForm()
+
+      allowed, found := r.Form["userconsent"]
+      if !found {
+        s.logger.Errorf("Variable 'userconsent' not found in http post so form must have been tampered with")
+        w.WriteHeader(http.StatusBadRequest)
+        fmt.Fprintf(w, "Bad request!")
+        return
+      } 
+
+      switch allowed[0] {
+      case "accept":
+        r.ParseForm()
+
+        s.logger.Debugf("Handling that user accepted the scope")
+
+        s.logger.Debugf("Getting the consent request")
+
+        getConsentRequest := admin.NewGetConsentRequestParamsWithHTTPClient(httpclient)
+        getConsentRequest.SetTimeout(10 * time.Second) 
+        getConsentRequest.ConsentChallenge = r.URL.Query().Get("consent_challenge")
+
+        getConsentRequestResponse, err := hydra.Admin.GetConsentRequest(getConsentRequest)
+        if err != nil {
+          s.logger.Errorf("Error getting the consent request: %s", err)
+          fmt.Fprintf(w, err.Error())
+          w.WriteHeader(http.StatusInternalServerError)
+          return
+        }
+
+        s.logger.Debugf("Preparing the accept consent request")
+
+        consentOKRequest := admin.NewAcceptConsentRequestParamsWithHTTPClient(httpclient)
+
+        var grantedScope []string
+
+        for _, requestedScope := range getConsentRequestResponse.Payload.RequestedScope {
+          if val, found := r.Form[fmt.Sprintf("scope_%s", requestedScope)]; found && strings.ToLower(val[0]) == "checked" {
+            grantedScope = append(grantedScope, requestedScope)
+          }
+        }
+
+        s.logger.Debugf("RequestedScope: %s", getConsentRequestResponse.Payload.RequestedScope) 
+        s.logger.Debugf("GrantedScope: %s", grantedScope) 
+
+        b := &models.HandledConsentRequest{
+          GrantedScope: grantedScope,
+          GrantedAudience: getConsentRequestResponse.Payload.RequestedAudience,
+        }
+
+        consentOKRequest.SetBody(b)
+        consentOKRequest.SetTimeout(10 * time.Second )
+        consentOKRequest.ConsentChallenge = r.URL.Query().Get("consent_challenge")
+
+        consentOKResponse, err := hydra.Admin.AcceptConsentRequest(consentOKRequest) 
+        if err != nil {
+          s.logger.Errorf("Error getting login ok: %s", err)
+          fmt.Fprintf(w, err.Error())
+          w.WriteHeader(http.StatusInternalServerError)
+          return
+        }
+        s.logger.Debugf("Succesfully called the accept consent endpoint")
+
+
+        //now send the redirect we just received
+        http.Redirect(w, r, consentOKResponse.Payload.RedirectTo, http.StatusFound)
+        return
+
+      case "reject":
+        consentDeniedRequest := admin.NewRejectConsentRequestParamsWithHTTPClient(httpclient)
+
+        b := &models.RequestDeniedError{
+          Name: "access_denied",
+          Description: "The resource owner denied the request",
+        }
+
+        consentDeniedRequest.SetBody(b)
+        consentDeniedRequest.SetTimeout(10 * time.Second )
+        consentDeniedRequest.ConsentChallenge = r.URL.Query().Get("consent_challenge")
+
+        consentDenyResponse, err := hydra.Admin.RejectConsentRequest(consentDeniedRequest)
+        if err != nil {
+          s.logger.Errorf("Error submitting a deny consent: %s", err)
+          fmt.Fprintf(w, err.Error())
+          w.WriteHeader(http.StatusInternalServerError)
+          return
+        }
+        s.logger.Debugf("Succesfully called the deny consent endpoint")
+
+        //now send the redirect we just received
+        http.Redirect(w, r, consentDenyResponse.Payload.RedirectTo, http.StatusFound)
+        return
+
+      default:
+        s.logger.Errorf("Variable 'userconsent' not found in http post so form must have been tampered with")
+        w.WriteHeader(http.StatusBadRequest)
+        fmt.Fprintf(w, "Bad request!")
+        return
+      }
+
+    default:
+      w.WriteHeader(http.StatusMethodNotAllowed)
+    }
+  })
+ 
+  s.logger.Infof("Starting server on port %d", s.config.Port)
+
+  log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", s.config.Port), nil))
+}

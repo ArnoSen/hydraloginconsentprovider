@@ -12,6 +12,10 @@ func NewBuiltInAuthorizer(username, password string) *BuiltIn {
   }
 }
 
-func (b *BuiltIn) Authenticate(username, password string) (bool, error) {
-  return username==b.username && password==b.password, nil
+func (b *BuiltIn) Authenticate(username, password string) (bool, string, error) {
+  if username==b.username && password==b.password {
+    return true, "", nil
+  } else {
+    return false, "Incorrect username and/or password", nil
+  }
 }

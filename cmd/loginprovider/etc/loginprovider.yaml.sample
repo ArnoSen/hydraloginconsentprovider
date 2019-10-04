@@ -1,0 +1,5 @@
+AuthMode: ad
+ADDomainControllers: [ "dc1", "dc2" ]
+ADDomain: mydomain.mylocation.com
+Port: 5000
+SkipSSLCheck: true
